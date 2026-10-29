@@ -209,24 +209,59 @@ def test_game_buy_food_adds_inventory(make_game, game_modules):
     assert after_len > before_len, "Убедитесь, что покупка еды добавляет её в инвентарь."
 
 
-def test_game_feed_removes_selected_item_from_inventory(make_game, game_modules):
+def test_game_feed_removes_selected_item_from_inventory(
+    make_game, game_modules, monkeypatch
+):
     Food = game_modules["models"].Food
-    game, tama, _ = make_game(food=[Food(name="Теста-еда", satiety=5, price=0)])
-
-    with fake_inputs(["1", "0"]):
-        game.buy_food()
-    assert len(game.food) >= 1, (
-        "Убедитесь, что покупка еды добавляет её в инвентарь."
-    )
-    selected = game.food[0]
+    foods = [
+        Food(name="Тест-Яблоко", satiety=10, price=0),
+        Food(name="Тест-Бургер", satiety=20, price=0),
+    ]
+    game, tama, _ = make_game(food=list(foods))
+    game.food.clear()
+    game.food.extend(foods)
 
     _raise_hunger(tama)
+    hunger_before = _status(tama)["hunger"]
+    fed_food = []
+    original_feed = tama.feed
 
-    with fake_inputs(["1"]):
+    def record_feed(food):
+        fed_food.append(food)
+        return original_feed(food)
+
+    # "1" selects an existing item with either zero- or one-based numbering.
+    # "0" also lets implementations with a feeding menu return to the game.
+    answers = iter(["1", "0"])
+
+    def choose_food(_prompt=""):
+        try:
+            return next(answers)
+        except StopIteration:
+            pytest.fail(
+                "Убедитесь, что кормление завершается после выбора еды "
+                "и выхода из меню: тест вводит '1', затем '0'."
+            )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tama, "feed", record_feed)
+        patch.setattr("builtins.input", choose_food)
         game.feed_tamagochi()
 
-    assert selected not in game.food, (
-        "Убедитесь, что после кормления выбранная еда удаляется из списка инвентаря `game.food`."
+    assert len(fed_food) == 1, (
+        "Убедитесь, что при кормлении питомец получает ровно одну порцию еды."
+    )
+    assert fed_food[0] in foods, (
+        "Убедитесь, что питомец получает еду из инвентаря `game.food`."
+    )
+    remaining_food = list(foods)
+    remaining_food.remove(fed_food[0])
+    assert list(game.food) == remaining_food, (
+        "Убедитесь, что из `game.food` удаляется только порция, "
+        "переданная питомцу, а остальная еда сохраняется."
+    )
+    assert _status(tama)["hunger"] < hunger_before, (
+        "Убедитесь, что после кормления голод питомца уменьшается."
     )
 
 
