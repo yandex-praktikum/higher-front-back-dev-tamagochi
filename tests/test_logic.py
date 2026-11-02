@@ -218,8 +218,11 @@ def test_game_feed_removes_selected_item_from_inventory(
         Food(name="Тест-Бургер", satiety=20, price=0),
     ]
     game, tama, _ = make_game(food=list(foods))
-    game.food.clear()
-    game.food.extend(foods)
+    # Add food through the public API: some implementations expose `food`
+    # as a defensive copy, so mutating the returned list does not change inventory.
+    with fake_inputs(["1", "2"]):
+        game.buy_food()
+        game.buy_food()
 
     _raise_hunger(tama)
     hunger_before = _status(tama)["hunger"]
